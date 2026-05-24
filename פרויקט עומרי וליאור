@@ -1,0 +1,195 @@
+#include <LiquidCrystal_I2C.h>
+#include <Adafruit_NeoPixel.h>
+#include <math.h>
+
+#define LDR_PIN A0
+#define TEMP_PIN A1
+#define BUTTON_PIN 2
+#define PIXEL_PIN 6
+#define NUMPIXELS 12
+#define SAMPLES 10
+
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+Adafruit_NeoPixel pixels(NUMPIXELS, PIXEL_PIN, NEO_GRB + NEO_KHZ800);
+
+int mode = 0;
+
+bool systemOn = true;
+
+float calibrationOffset = 12;
+
+void setup() {
+
+  Serial.begin(9600);
+
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+  lcd.init();
+  lcd.backlight();
+
+  pixels.begin();
+  pixels.show();
+
+  lcd.setCursor(0,0);
+  lcd.print("System Ready");
+
+  delay(1500);
+
+  lcd.clear();
+}
+
+void loop() {
+
+  // ===== בדיקת כפתור =====
+  if (digitalRead(BUTTON_PIN) == LOW) {
+
+    unsigned long startPress = millis();
+
+    // מחכה עד שמשחררים
+    while (digitalRead(BUTTON_PIN) == LOW);
+
+    unsigned long pressTime = millis() - startPress;
+
+    // ===== לחיצה ארוכה =====
+    if (pressTime >= 2000) {
+
+      systemOn = !systemOn;
+
+      // כיבוי
+      if (!systemOn) {
+
+        lcd.clear();
+        lcd.noBacklight();
+
+        setColor(0,0,0);
+        pixels.show();
+      }
+
+      // הדלקה
+      else {
+
+        lcd.backlight();
+
+        lcd.setCursor(0,0);
+        lcd.print("System ON");
+
+        delay(1000);
+
+        lcd.clear();
+      }
+    }
+
+    // ===== לחיצה קצרה =====
+    else {
+
+      if (systemOn) {
+
+        mode++;
+
+        if (mode > 1) {
+          mode = 0;
+        }
+
+        lcd.clear();
+      }
+    }
+
+    delay(300);
+  }
+
+  // ===== אם המערכת כבויה =====
+  if (!systemOn) {
+    return;
+  }
+
+  // ===== מצב אור =====
+  if (mode == 0) {
+
+    int ldrValue = analogRead(LDR_PIN);
+
+    lcd.setCursor(0,0);
+    lcd.print("Light: ");
+    lcd.print(ldrValue);
+    lcd.print("   ");
+
+    lcd.setCursor(0,1);
+
+    if (ldrValue < 500) {
+
+      lcd.print("Room: DARK   ");
+
+      setColor(255,0,0);
+    }
+    else {
+
+      lcd.print("Room: BRIGHT ");
+
+      setColor(0,255,0);
+    }
+  }
+
+  // ===== מצב טמפרטורה =====
+  else {
+
+    long sum = 0;
+
+    for (int i = 0; i < SAMPLES; i++) {
+
+      sum += analogRead(TEMP_PIN);
+
+      delay(10);
+    }
+
+    float reading = sum / (float)SAMPLES;
+
+    float resistance =
+      (1023.0 / reading - 1.0) * 10000.0;
+
+    float temperatureK =
+      1.0 / (log(resistance / 10000.0) / 3950.0 + 1.0 / 298.15);
+
+    float temperatureC =
+      temperatureK - 273.15 + calibrationOffset;
+
+    Serial.print("Temp: ");
+    Serial.println(temperatureC);
+
+    lcd.setCursor(0,0);
+
+    lcd.print("Temp: ");
+    lcd.print(temperatureC);
+    lcd.print(" C   ");
+
+    lcd.setCursor(0,1);
+    lcd.print("Mode: TEMP   ");
+
+    // ===== צבע לפי טמפרטורה =====
+    if (temperatureC >= 28) {
+
+      setColor(255,0,0);
+
+    }
+    else if (temperatureC >= 24) {
+
+      setColor(0,255,0);
+
+    }
+    else {
+
+      setColor(0,0,255);
+    }
+  }
+
+  pixels.show();
+
+  delay(300);
+}
+
+// ===== פונקציה לצביעה =====
+void setColor(int r, int g, int b) {
+
+  for (int i = 0; i < NUMPIXELS; i++) {
+
+    pixels.setPixelColor(i, pixels.Color(r,g,b));
+  }
+}
